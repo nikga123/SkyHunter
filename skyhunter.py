@@ -39,8 +39,10 @@ DJI_24_MHZ      = (2400, 2483)
 DJI_58_MHZ      = (5725, 5850)
 DJI_BANDS_MHZ   = [DJI_24_MHZ, DJI_58_MHZ]
 # Yuneec Typhoon bands: 2.4 GHz control + 5.8 GHz video (analog)
+# Note: 2.4 GHz control band overlaps with DJI but Yuneec uses different protocols
 YUNEEC_24_MHZ   = (2400, 2483)  # ST16 controller control link
 YUNEEC_58_MHZ   = (5650, 5850)  # Video transmission (analog, similar to FPV)
+YUNEEC_58_LOWER_MHZ = (5650, 5725)  # Lower 5.8 GHz range more specific to Yuneec
 YUNEEC_BANDS_MHZ = [YUNEEC_24_MHZ, YUNEEC_58_MHZ]
 
 # ============================ Helpers ============================
@@ -115,7 +117,7 @@ def classify_signal(pk_freq_mhz: float, est_width_mhz: float) -> str:
     # Check 2.4 GHz band first (more specific for Yuneec control link)
     # For 5.8 GHz, only classify as Yuneec if in lower range (5650-5725 MHz)
     if 7.0 <= est_width_mhz <= 11.0:
-        if in_band(pk_freq_mhz, YUNEEC_24_MHZ) or (5650 <= pk_freq_mhz < 5725):
+        if in_band(pk_freq_mhz, YUNEEC_24_MHZ) or in_band(pk_freq_mhz, YUNEEC_58_LOWER_MHZ):
             return "Yuneec Typhoon Detected"
     
     # Generic analog FPV: signals in 5.8 GHz FPV range
