@@ -189,7 +189,7 @@ When an RF signal is detected, you’ll see logs such as:
 ```
 [ALERT] DJI Detected @ 2435 MHz ~18 MHz (mean +9 dB, peak +15 dB)
 [ALERT] FPV Detected @ 5800 MHz Peak +14 dB ~8 MHz
-[ALERT] Yuneec Typhoon Detected @ 5820 MHz ~9 MHz (mean +7 dB, peak +13 dB)
+[ALERT] Yuneec Typhoon Detected @ 5680 MHz ~9 MHz (mean +7 dB, peak +13 dB)
 ```
 
 ---
