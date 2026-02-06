@@ -101,25 +101,31 @@ def classify_signal(pk_freq_mhz: float, est_width_mhz: float) -> str:
     Classify by *signal* shape + location, not current sweep band:
       - Analog FPV: width ≤ 12 MHz AND in FPV 5.8 window → "FPV Detected"
       - DJI OFDM:   width ≥ 10 MHz AND in 2.4/5.8 DJI windows → "DJI Detected"
-      - Yuneec Typhoon: width 7-11 MHz in Yuneec bands → "Yuneec Typhoon Detected"
+      - Yuneec Typhoon: width 7-11 MHz in Yuneec bands (2.4 or 5.8) → "Yuneec Typhoon Detected"
       - Else: "Signal Detected"
     """
     if pk_freq_mhz is None:
         return "Signal Detected"
     
-    # Yuneec Typhoon: 7-11 MHz bandwidth, analog video similar to FPV but distinct pattern
-    # Yuneec uses 2.4 GHz for control and 5.8 GHz for video
-    if 7.0 <= est_width_mhz <= 11.0:
-        if in_band(pk_freq_mhz, YUNEEC_24_MHZ) or in_band(pk_freq_mhz, YUNEEC_58_MHZ):
-            return "Yuneec Typhoon Detected"
-    
-    # Generic analog FPV: narrower signals in 5.8 GHz
-    if est_width_mhz <= 10.0 and in_band(pk_freq_mhz, FPV_58_WIDE_MHZ):
-        return "FPV Detected"
-    
-    # DJI: wider OFDM signals
+    # DJI: wider OFDM signals (10-40 MHz)
     if est_width_mhz >= 10.0 and (in_band(pk_freq_mhz, DJI_24_MHZ) or in_band(pk_freq_mhz, DJI_58_MHZ)):
         return "DJI Detected"
+    
+    # Yuneec Typhoon: 7-11 MHz bandwidth, analog video
+    # Yuneec uses 2.4 GHz for control and 5.8 GHz for video
+    # Check 2.4 GHz band first (more specific for Yuneec control link)
+    if 7.0 <= est_width_mhz <= 11.0 and in_band(pk_freq_mhz, YUNEEC_24_MHZ):
+        return "Yuneec Typhoon Detected"
+    
+    # For 5.8 GHz, prefer FPV classification for signals in core FPV bands (5725-5920)
+    # unless in the lower Yuneec-specific range (5650-5725)
+    if 7.0 <= est_width_mhz <= 11.0:
+        if 5650 <= pk_freq_mhz < 5725:  # Lower 5.8 GHz - more likely Yuneec
+            return "Yuneec Typhoon Detected"
+    
+    # Generic analog FPV: signals in 5.8 GHz FPV range
+    if est_width_mhz <= 12.0 and in_band(pk_freq_mhz, FPV_58_WIDE_MHZ):
+        return "FPV Detected"
     
     return "Signal Detected"
 
@@ -182,13 +188,18 @@ class MultiBandDetector:
         # Acceptance rules (width + excess)
         accepted = []
         for cf_mhz, w_mhz, mex, pex, (lo, hi) in regions:
-            # DJI-style plateau
+            # DJI-style plateau (wider signals)
             if (10.0 <= w_mhz <= 40.0) and (mex >= self.dji_mean_ex_db):
                 accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
-            # Yuneec Typhoon (7-11 MHz, analog video)
+            # Yuneec Typhoon (7-11 MHz) - check for 2.4 GHz or lower 5.8 GHz band
             elif (7.0 <= w_mhz <= 11.0) and ((pex >= self.fpv_peak_ex_db) or (mex >= self.fpv_mean_ex_db)):
-                accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
-            # FPV analog
+                # Accept if in 2.4 GHz or lower part of 5.8 GHz (5650-5725 MHz)
+                if (2400 <= cf_mhz <= 2483) or (5650 <= cf_mhz < 5725):
+                    accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
+                # Also accept for upper 5.8 but will be classified as FPV by classify_signal
+                else:
+                    accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
+            # FPV analog (all other signals in valid range)
             elif (4.0 <= w_mhz <= 12.0) and ((pex >= self.fpv_peak_ex_db) or (mex >= self.fpv_mean_ex_db)):
                 accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
 
