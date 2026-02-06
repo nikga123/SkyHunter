@@ -183,12 +183,14 @@ class MultiBandDetector:
             regions.append((cf_hz/1e6, width_mhz, mean_ex, peak_ex, (low_hz/1e6, high_hz/1e6)))
 
         # Acceptance rules (width + excess)
+        # Note: All analog signals (4-12 MHz) are accepted here; final classification
+        # between Yuneec (7-11 MHz in specific bands) and FPV is done in classify_signal()
         accepted = []
         for cf_mhz, w_mhz, mex, pex, (lo, hi) in regions:
             # DJI-style plateau (wider signals)
             if (10.0 <= w_mhz <= 40.0) and (mex >= self.dji_mean_ex_db):
                 accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
-            # Yuneec/FPV analog (7-11 MHz and 4-12 MHz ranges - will be classified by classify_signal)
+            # Analog signals (Yuneec/FPV) - 4-12 MHz range
             elif (4.0 <= w_mhz <= 12.0) and ((pex >= self.fpv_peak_ex_db) or (mex >= self.fpv_mean_ex_db)):
                 accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
 

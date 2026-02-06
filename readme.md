@@ -192,6 +192,8 @@ When an RF signal is detected, you’ll see logs such as:
 [ALERT] Yuneec Typhoon Detected @ 5680 MHz ~9 MHz (mean +7 dB, peak +13 dB)
 ```
 
+**Note**: Yuneec Typhoon signals are identified by 7-11 MHz bandwidth in the 2.4 GHz band or lower 5.8 GHz range (5650-5725 MHz). Similar bandwidth signals in the upper 5.8 GHz range (5725+ MHz) are classified as generic FPV.
+
 ---
 
 ### All CLI Options
