@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # SKYHUNTER — DRONE RF DETECTOR (TUI, libhackrf.py wrapper on Ubuntu/WSL/Windows via WSL)
 # - Streams IQ via your local libhackrf.py (ctypes wrapper) — READING PATH UNCHANGED.
-# - Welch PSD + robust baseline to detect DJI (10–40 MHz plateau) and FPV analog (4–12 MHz).
+# - Welch PSD + robust baseline to detect DJI (10–40 MHz plateau), Yuneec Typhoon (7–11 MHz), and FPV analog (4–12 MHz).
 # - Floor-based alert DEFAULT ON at +10 dB over session minimum, ~7s full-band scan by default.
 # - FIX: Band-aware alerts now classify by the SIGNAL ITSELF (width + frequency), not by the band being swept.
 #   • Analog-width (≤12 MHz) around peak → "FPV Detected" (when in 5.65–5.92 GHz)
 #   • Wide plateau (≥10 MHz) in DJI bands (2.4 or 5.8) → "DJI Detected"
+#   • Yuneec Typhoon (7-11 MHz) in 2.4/5.8 GHz → "Yuneec Typhoon Detected"
 
 import argparse, sys, time
 from collections import deque, defaultdict
@@ -37,6 +38,10 @@ FPV_58_WIDE_MHZ = (5650, 5920)
 DJI_24_MHZ      = (2400, 2483)
 DJI_58_MHZ      = (5725, 5850)
 DJI_BANDS_MHZ   = [DJI_24_MHZ, DJI_58_MHZ]
+# Yuneec Typhoon bands: 2.4 GHz control + 5.8 GHz video (analog)
+YUNEEC_24_MHZ   = (2400, 2483)  # ST16 controller control link
+YUNEEC_58_MHZ   = (5650, 5850)  # Video transmission (analog, similar to FPV)
+YUNEEC_BANDS_MHZ = [YUNEEC_24_MHZ, YUNEEC_58_MHZ]
 
 # ============================ Helpers ============================
 
@@ -96,14 +101,26 @@ def classify_signal(pk_freq_mhz: float, est_width_mhz: float) -> str:
     Classify by *signal* shape + location, not current sweep band:
       - Analog FPV: width ≤ 12 MHz AND in FPV 5.8 window → "FPV Detected"
       - DJI OFDM:   width ≥ 10 MHz AND in 2.4/5.8 DJI windows → "DJI Detected"
+      - Yuneec Typhoon: width 7-11 MHz in Yuneec bands → "Yuneec Typhoon Detected"
       - Else: "Signal Detected"
     """
     if pk_freq_mhz is None:
         return "Signal Detected"
+    
+    # Yuneec Typhoon: 7-11 MHz bandwidth, analog video similar to FPV but distinct pattern
+    # Yuneec uses 2.4 GHz for control and 5.8 GHz for video
+    if 7.0 <= est_width_mhz <= 11.0:
+        if in_band(pk_freq_mhz, YUNEEC_24_MHZ) or in_band(pk_freq_mhz, YUNEEC_58_MHZ):
+            return "Yuneec Typhoon Detected"
+    
+    # Generic analog FPV: narrower signals in 5.8 GHz
     if est_width_mhz <= 10.0 and in_band(pk_freq_mhz, FPV_58_WIDE_MHZ):
         return "FPV Detected"
+    
+    # DJI: wider OFDM signals
     if est_width_mhz >= 10.0 and (in_band(pk_freq_mhz, DJI_24_MHZ) or in_band(pk_freq_mhz, DJI_58_MHZ)):
         return "DJI Detected"
+    
     return "Signal Detected"
 
 # ============================ Detector ============================
@@ -167,6 +184,9 @@ class MultiBandDetector:
         for cf_mhz, w_mhz, mex, pex, (lo, hi) in regions:
             # DJI-style plateau
             if (10.0 <= w_mhz <= 40.0) and (mex >= self.dji_mean_ex_db):
+                accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
+            # Yuneec Typhoon (7-11 MHz, analog video)
+            elif (7.0 <= w_mhz <= 11.0) and ((pex >= self.fpv_peak_ex_db) or (mex >= self.fpv_mean_ex_db)):
                 accepted.append((cf_mhz, w_mhz, mex, pex, lo, hi))
             # FPV analog
             elif (4.0 <= w_mhz <= 12.0) and ((pex >= self.fpv_peak_ex_db) or (mex >= self.fpv_mean_ex_db)):
@@ -373,14 +393,16 @@ def choose_mode_cli():
     print("Choose a sweep mode:")
     print("  [1] FPV 5.8 GHz (common analog)")
     print("  [2] DJI (2.4 + 5.8)")
-    print("  [3] All")
-    print("  [4] Custom (MHz like 5738:5758,5645:5900)")
+    print("  [3] Yuneec Typhoon (2.4 + 5.8)")
+    print("  [4] All")
+    print("  [5] Custom (MHz like 5738:5758,5645:5900)")
     print("  [q] Quit\n")
     sel = input("Selection: ").strip().lower()
     if sel == "1":  return "FPV 5.8", [FPV_58_WIDE_MHZ]
     if sel == "2":  return "DJI 2.4+5.8", DJI_BANDS_MHZ
-    if sel == "3":  return "All", [FPV_58_WIDE_MHZ] + DJI_BANDS_MHZ
-    if sel == "4":
+    if sel == "3":  return "Yuneec Typhoon 2.4+5.8", YUNEEC_BANDS_MHZ
+    if sel == "4":  return "All", [FPV_58_WIDE_MHZ] + DJI_BANDS_MHZ + YUNEEC_BANDS_MHZ
+    if sel == "5":
         txt = input("Enter ranges (MHz), comma-separated: ").strip()
         bands=[]
         for chunk in txt.split(","):
@@ -562,15 +584,17 @@ def main():
     ap.add_argument("--center-overlap", type=float, default=0.75, help="Center step = span*overlap (0.6–0.9)")
 
     # Modes
-    ap.add_argument("--auto", choices=["fpv","dji","all"])
+    ap.add_argument("--auto", choices=["fpv","dji","yuneec","all"])
     args = ap.parse_args()
 
     if args.auto == "fpv":
         args.mode_name, bands = "FPV 5.8", [FPV_58_WIDE_MHZ]
     elif args.auto == "dji":
         args.mode_name, bands = "DJI 2.4+5.8", DJI_BANDS_MHZ
+    elif args.auto == "yuneec":
+        args.mode_name, bands = "Yuneec Typhoon 2.4+5.8", YUNEEC_BANDS_MHZ
     elif args.auto == "all":
-        args.mode_name, bands = "All", [FPV_58_WIDE_MHZ] + DJI_BANDS_MHZ
+        args.mode_name, bands = "All", [FPV_58_WIDE_MHZ] + DJI_BANDS_MHZ + YUNEEC_BANDS_MHZ
     else:
         args.mode_name, bands = choose_mode_cli()
 

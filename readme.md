@@ -1,6 +1,6 @@
 # SKYHUNTER — Drone RF Detector (HackRF, Python TUI)
 
-**SKYHUNTER** is a fast, live drone RF detector designed for detecting DJI (OFDM) and analog FPV signals using HackRF.  
+**SKYHUNTER** is a fast, live drone RF detector designed for detecting DJI (OFDM), Yuneec Typhoon, and analog FPV signals using HackRF.  
 It streams IQ data via a lightweight `libhackrf.py` wrapper, computes Power Spectral Density (Welch method), and raises alerts in a terminal UI.
 
 ---
@@ -9,7 +9,8 @@ It streams IQ data via a lightweight `libhackrf.py` wrapper, computes Power Spec
 
 - **DJI Detection**: Identifies 10–40 MHz “plateaus” with persistence filtering.  
 - **FPV Detection**: Detects 4–12 MHz analog spikes with a floor-rise rule.  
-- **Fast Sweeping**: ~7 seconds per full 5.8 GHz band at default settings (20 MS/s, overlap 0.75, dwell 0.4 s).  
+- **Yuneec Typhoon Detection**: Detects 7–11 MHz analog video signals in 2.4/5.8 GHz bands.  
+- **Fast Sweeping**: ~7 seconds per full 5.8 GHz band at default settings (20 MS/s, overlap 0.75, dwell 0.4 s).
 - **Terminal UI**: Interactive curses-based UI with fallback to a simple status line.  
 
 ---
@@ -154,7 +155,12 @@ You should see **“Found HackRF”** and device details.
   python skyhunter.py --auto dji
   ```
 
-- **All bands (FPV + DJI)**:  
+- **Yuneec Typhoon 2.4 + 5.8 GHz sweep**:  
+  ```bash
+  python skyhunter.py --auto yuneec
+  ```
+
+- **All bands (FPV + DJI + Yuneec)**:  
   ```bash
   python skyhunter.py --auto all
   ```
@@ -183,6 +189,7 @@ When an RF signal is detected, you’ll see logs such as:
 ```
 [ALERT] DJI Detected @ 2435 MHz ~18 MHz (mean +9 dB, peak +15 dB)
 [ALERT] FPV Detected @ 5800 MHz Peak +14 dB ~8 MHz
+[ALERT] Yuneec Typhoon Detected @ 5820 MHz ~9 MHz (mean +7 dB, peak +13 dB)
 ```
 
 ---
@@ -199,7 +206,7 @@ usage: skyhunter.py [-h] [--device-index DEVICE_INDEX] [--amp] [--lna LNA] [--vg
                     [--floor-alert-rise-db FLOOR_ALERT_RISE_DB]
                     [--floor-persist-hits FLOOR_PERSIST_HITS] [--no-floor-alert]
                     [--dwell DWELL] [--center-overlap CENTER_OVERLAP]
-                    [--auto {fpv,dji,all}]
+                    [--auto {fpv,dji,yuneec,all}]
 ```
 
 **Defaults:**
@@ -218,8 +225,9 @@ usage: skyhunter.py [-h] [--device-index DEVICE_INDEX] [--amp] [--lna LNA] [--vg
 4. **Grouping** → Hot bins grouped into contiguous regions → bandwidth + stats.  
 5. **Classification**:  
    - DJI: 10–40 MHz wide plateau, persistent across frames.  
+   - Yuneec Typhoon: 7–11 MHz analog video signals in 2.4/5.8 GHz.  
    - FPV: 4–12 MHz spikes or floor-rise +10 dB.  
-6. **UI** → Curses TUI event log + live stats (fallback: single status line).  
+6. **UI** → Curses TUI event log + live stats (fallback: single status line).
 
 ---
 
